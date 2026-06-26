@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Nursing Metrics Reporting System</title>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
@@ -28,7 +29,6 @@
             const [loading, setLoading] = useState(false);
             const [allData, setAllData] = useState([]);
             const [indicators, setIndicators] = useState([]);
-            const [chartInstance, setChartInstance] = useState(null);
 
             const departmentsList = [
                 { id: 'NG01', name: 'กลุ่มการพยาบาล', manager: 'อ.สมชาย' },
@@ -52,7 +52,6 @@
                 { id: 'NG19', name: 'สูติ-กุมาร', manager: 'อ.สมเดช' },
             ];
 
-            // Fetch data from API
             const fetchData = async (action, params = {}) => {
                 setLoading(true);
                 try {
@@ -60,11 +59,10 @@
                     Object.keys(params).forEach(key => {
                         url += `&${key}=${encodeURIComponent(params[key])}`;
                     });
-
                     const response = await fetch(url);
                     const result = await response.json();
-                    
                     if (result.success) {
+                        setLoading(false);
                         return result.data;
                     }
                 } catch (error) {
@@ -74,18 +72,13 @@
                 return null;
             };
 
-            // Load data on mount
             useEffect(() => {
                 const loadData = async () => {
                     const data = await fetchData('getAllData');
                     if (data) setAllData(data);
-
                     const inds = await fetchData('getIndicators');
                     if (inds) setIndicators(inds);
-                    
-                    setLoading(false);
                 };
-
                 loadData();
             }, []);
 
@@ -93,7 +86,6 @@
             const Dashboard = () => {
                 const passCount = allData.filter(d => d.pass_fail === 'ผ่าน').length;
                 const deptPerformance = {};
-                
                 allData.forEach(d => {
                     if (!deptPerformance[d.hospital]) {
                         deptPerformance[d.hospital] = { pass: 0, total: 0 };
@@ -102,14 +94,26 @@
                     if (d.pass_fail === 'ผ่าน') deptPerformance[d.hospital].pass++;
                 });
 
-                const chartData = {
-                    labels: Object.keys(deptPerformance).slice(0, 10),
-                    datasets: [{
-                        label: 'ผ่าน',
-                        data: Object.values(deptPerformance).slice(0, 10).map(d => d.pass),
-                        backgroundColor: 'rgba(34, 197, 94, 0.5)',
-                    }]
-                };
+                const chartRef = useRef(null);
+                useEffect(() => {
+                    if (!chartRef.current) return;
+                    const ctx = chartRef.current.getContext('2d');
+                    const labels = Object.keys(deptPerformance).slice(0, 10);
+                    const passData = labels.map(k => deptPerformance[k].pass);
+                    const failData = labels.map(k => deptPerformance[k].total - deptPerformance[k].pass);
+                    const chart = new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels,
+                            datasets: [
+                                { label: 'ผ่าน', data: passData, backgroundColor: 'rgba(34,197,94,0.6)' },
+                                { label: 'ไม่ผ่าน', data: failData, backgroundColor: 'rgba(239,68,68,0.6)' },
+                            ]
+                        },
+                        options: { responsive: true, maintainAspectRatio: false }
+                    });
+                    return () => chart.destroy();
+                }, [allData]);
 
                 return (
                     <div className="space-y-6">
@@ -135,7 +139,7 @@
                         <div className="bg-white p-6 rounded-lg border border-gray-200">
                             <h3 className="text-lg font-semibold mb-4">📊 ผลการปฏิบัติตามหน่วยงาน</h3>
                             <div className="chart-container">
-                                <canvas id="deptChart"></canvas>
+                                <canvas ref={chartRef}></canvas>
                             </div>
                         </div>
 
@@ -159,8 +163,8 @@
                                                 <td className="p-3 text-center">{d.result_value}</td>
                                                 <td className="p-3 text-center">
                                                     <span className={`px-2 py-1 rounded text-xs font-medium ${
-                                                        d.pass_fail === 'ผ่าน' 
-                                                            ? 'bg-green-100 text-green-700' 
+                                                        d.pass_fail === 'ผ่าน'
+                                                            ? 'bg-green-100 text-green-700'
                                                             : 'bg-red-100 text-red-700'
                                                     }`}>
                                                         {d.pass_fail || '—'}
@@ -170,6 +174,9 @@
                                         ))}
                                     </tbody>
                                 </table>
+                                {allData.length === 0 && (
+                                    <p className="text-center py-8 text-gray-500">ไม่มีข้อมูล</p>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -192,7 +199,6 @@
                 const handleSubmit = async (e) => {
                     e.preventDefault();
                     setLoading(true);
-                    
                     try {
                         const response = await fetch(API_URL, {
                             method: 'POST',
@@ -203,7 +209,6 @@
                                 extra_data: { month: formData.month }
                             })
                         });
-
                         const result = await response.json();
                         if (result.success) {
                             alert('บันทึกข้อมูลสำเร็จ!');
@@ -216,6 +221,8 @@
                     }
                     setLoading(false);
                 };
+
+                const months = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
 
                 return (
                     <div className="space-y-6">
@@ -245,18 +252,7 @@
                                             onChange={(e) => setFormData({...formData, month: e.target.value})}
                                             className="w-full p-2 border rounded text-sm"
                                         >
-                                            <option>ม.ค.</option>
-                                            <option>ก.พ.</option>
-                                            <option>มี.ค.</option>
-                                            <option>เม.ย.</option>
-                                            <option>พ.ค.</option>
-                                            <option>มิ.ย.</option>
-                                            <option>ก.ค.</option>
-                                            <option>ส.ค.</option>
-                                            <option>ก.ย.</option>
-                                            <option>ต.ค.</option>
-                                            <option>พ.ย.</option>
-                                            <option>ธ.ค.</option>
+                                            {months.map(m => <option key={m}>{m}</option>)}
                                         </select>
                                     </div>
 
@@ -325,10 +321,7 @@
                                             onChange={(e) => setFormData({...formData, year: Number(e.target.value)})}
                                             className="w-full p-2 border rounded text-sm"
                                         >
-                                            <option value={2567}>2567</option>
-                                            <option value={2568}>2568</option>
-                                            <option value={2569}>2569</option>
-                                            <option value={2570}>2570</option>
+                                            {[2567,2568,2569,2570].map(y => <option key={y} value={y}>{y}</option>)}
                                         </select>
                                     </div>
                                 </div>
@@ -348,34 +341,28 @@
 
             // Reports Component
             const Reports = () => {
-                const [filters, setFilters] = useState({
-                    hospital: '',
-                    indicator_id: '',
-                    year: 2569,
-                    month: ''
-                });
+                const [filters, setFilters] = useState({ hospital: '', indicator_id: '', year: 2569, month: '' });
                 const [reportData, setReportData] = useState([]);
+                const months = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
 
                 const handleSearch = async () => {
                     const params = { year: filters.year };
                     if (filters.hospital) params.hospital = filters.hospital;
                     if (filters.indicator_id) params.indicator_id = filters.indicator_id;
                     if (filters.month) params.month = filters.month;
-
                     const data = await fetchData('getByFilters', params);
                     if (data) setReportData(data);
                 };
 
                 const exportPDF = () => {
                     const element = document.getElementById('reportTable');
-                    const opt = {
+                    html2pdf().set({
                         margin: 10,
                         filename: 'nursing-metrics-report.pdf',
                         image: { type: 'jpeg', quality: 0.98 },
                         html2canvas: { scale: 2 },
                         jsPDF: { orientation: 'landscape', unit: 'mm', format: 'a4' }
-                    };
-                    html2pdf().set(opt).from(element).save();
+                    }).from(element).save();
                 };
 
                 const exportExcel = () => {
@@ -389,7 +376,6 @@
                     <div className="space-y-6">
                         <div className="bg-white p-6 rounded-lg border border-gray-200">
                             <h3 className="text-lg font-semibold mb-4">🔍 ค้นหารายงาน</h3>
-
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                                 <div>
                                     <label className="block text-sm font-medium mb-2">หน่วยงาน</label>
@@ -404,7 +390,6 @@
                                         ))}
                                     </select>
                                 </div>
-
                                 <div>
                                     <label className="block text-sm font-medium mb-2">ตัวชี้วัด</label>
                                     <select
@@ -418,7 +403,6 @@
                                         ))}
                                     </select>
                                 </div>
-
                                 <div>
                                     <label className="block text-sm font-medium mb-2">เดือน</label>
                                     <select
@@ -427,21 +411,9 @@
                                         className="w-full p-2 border rounded text-sm"
                                     >
                                         <option value="">ทั้งหมด</option>
-                                        <option value="ม.ค.">ม.ค.</option>
-                                        <option value="ก.พ.">ก.พ.</option>
-                                        <option value="มี.ค.">มี.ค.</option>
-                                        <option value="เม.ย.">เม.ย.</option>
-                                        <option value="พ.ค.">พ.ค.</option>
-                                        <option value="มิ.ย.">มิ.ย.</option>
-                                        <option value="ก.ค.">ก.ค.</option>
-                                        <option value="ส.ค.">ส.ค.</option>
-                                        <option value="ก.ย.">ก.ย.</option>
-                                        <option value="ต.ค.">ต.ค.</option>
-                                        <option value="พ.ย.">พ.ย.</option>
-                                        <option value="ธ.ค.">ธ.ค.</option>
+                                        {months.map(m => <option key={m} value={m}>{m}</option>)}
                                     </select>
                                 </div>
-
                                 <div>
                                     <label className="block text-sm font-medium mb-2">ปี</label>
                                     <select
@@ -449,34 +421,21 @@
                                         onChange={(e) => setFilters({...filters, year: Number(e.target.value)})}
                                         className="w-full p-2 border rounded text-sm"
                                     >
-                                        <option value={2567}>2567</option>
-                                        <option value={2568}>2568</option>
-                                        <option value={2569}>2569</option>
-                                        <option value={2570}>2570</option>
+                                        {[2567,2568,2569,2570].map(y => <option key={y} value={y}>{y}</option>)}
                                     </select>
                                 </div>
                             </div>
-
                             <div className="flex flex-wrap gap-3">
-                                <button
-                                    onClick={handleSearch}
-                                    disabled={loading}
-                                    className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
-                                >
+                                <button onClick={handleSearch} disabled={loading}
+                                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400">
                                     🔍 ค้นหา
                                 </button>
-                                <button
-                                    onClick={exportPDF}
-                                    disabled={reportData.length === 0}
-                                    className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-gray-400"
-                                >
+                                <button onClick={exportPDF} disabled={reportData.length === 0}
+                                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-gray-400">
                                     📄 Export PDF
                                 </button>
-                                <button
-                                    onClick={exportExcel}
-                                    disabled={reportData.length === 0}
-                                    className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400"
-                                >
+                                <button onClick={exportExcel} disabled={reportData.length === 0}
+                                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400">
                                     📊 Export Excel
                                 </button>
                             </div>
@@ -502,8 +461,8 @@
                                                 <td className="p-3 text-center">{d.result_value}</td>
                                                 <td className="p-3 text-center">
                                                     <span className={`px-2 py-1 rounded text-xs font-medium ${
-                                                        d.pass_fail === 'ผ่าน' 
-                                                            ? 'bg-green-100 text-green-700' 
+                                                        d.pass_fail === 'ผ่าน'
+                                                            ? 'bg-green-100 text-green-700'
                                                             : 'bg-red-100 text-red-700'
                                                     }`}>
                                                         {d.pass_fail || '—'}
@@ -527,7 +486,6 @@
                 <div className="space-y-6">
                     <div className="bg-white p-6 rounded-lg border border-gray-200">
                         <h3 className="text-lg font-semibold mb-4">⭐ ตัวชี้วัดคุณภาพการพยาบาล</h3>
-
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {indicators.map((metric, idx) => (
                                 <div key={idx} className="p-4 border rounded-lg hover:bg-blue-50">
@@ -538,6 +496,9 @@
                                     </span>
                                 </div>
                             ))}
+                            {indicators.length === 0 && (
+                                <p className="text-gray-500 text-sm col-span-2">ไม่มีข้อมูลตัวชี้วัด</p>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -548,7 +509,6 @@
                 <div className="space-y-6">
                     <div className="bg-white p-6 rounded-lg border border-gray-200">
                         <h3 className="text-lg font-semibold mb-4">👥 จัดการหน่วยงาน</h3>
-
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {departmentsList.map(dept => (
                                 <div key={dept.id} className="p-4 border rounded-lg">
@@ -584,6 +544,14 @@
                 </div>
             );
 
+            const tabs = [
+                { id: 'dashboard', label: '📊 Dashboard' },
+                { id: 'entry', label: '📝 Data Entry' },
+                { id: 'reports', label: '📄 Reports' },
+                { id: 'quality', label: '⭐ Quality Metrics' },
+                { id: 'settings', label: '⚙️ Settings' },
+            ];
+
             return (
                 <div className="min-h-screen bg-gray-100">
                     {/* Header */}
@@ -598,13 +566,7 @@
                     <div className="bg-white border-b border-gray-200 sticky top-[88px] z-10">
                         <div className="max-w-7xl mx-auto px-4">
                             <div className="flex gap-1 overflow-x-auto">
-                                {[
-                                    { id: 'dashboard', label: '📊 Dashboard' },
-                                    { id: 'entry', label: '📝 Data Entry' },
-                                    { id: 'reports', label: '📄 Reports' },
-                                    { id: 'quality', label: '⭐ Quality Metrics' },
-                                    { id: 'settings', label: '⚙️ Settings' },
-                                ].map(tab => (
+                                {tabs.map(tab => (
                                     <button
                                         key={tab.id}
                                         onClick={() => setActiveTab(tab.id)}
